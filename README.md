@@ -23,70 +23,100 @@
 
 📂 项目工程目录结构
 fengcheng-yuntu/
-├── backend/                         # 后端工程 (FastAPI)
+├── .gitignore
+├── README.md
+├── 框架图.jpg
+├── backend/
+│   ├── .env.example
+│   ├── requirements.txt
+│   ├── test_planner.py
+│   ├── test_rag.py
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py                  # 服务入口、全局 CORS 与数据表初始化
-│   │   ├── config.py                # Pydantic Settings 配置与环境变量读取
-│   │   ├── database.py              # SQLite 数据库引擎与 Session 工厂
-│   │   ├── schemas/                 # Pydantic 数据传输协议
-│   │   │   └── trip.py              # 行程请求、响应、地点、天气契约定义
-│   │   ├── models/                  # SQLAlchemy ORM 数据库实体
-│   │   │   └── trip.py              # 行程记录持久化表模型
-│   │   ├── services/                # 外部三方服务
-│   │   │   ├── map_service.py       # 高德 POI 坐标偏置与清洗解析服务
-│   │   │   └── weather_service.py   # 泰州天气查询与动态提示服务
-│   │   ├── rag/                     # RAG 检索模块
-│   │   │   └── hybrid.py            # BM25 + ChromaDB + RRF 混合检索引擎
-│   │   ├── agent/                   # LLM 决策与规划
-│   │   │   ├── prompt_templates.py  # 泰州文旅专属结构化 Prompt 模板
-│   │   │   └── planner.py           # 行程规划 Agent 核心编排器
-│   │   └── routes/                  # API 控制器
-│   │       └── trip.py              # 行程生成、详情查询与历史记录路由
-│   ├── data/
-│   │   ├── guides/                  # 泰州垂直高质量 Markdown 攻略库
-│   │   │   ├── morning_tea_and_culture.md
-│   │   │   ├── wetland_and_ecology.md
-│   │   │   └── taizhou_food_and_routes.md
-│   │   └── chroma_db/               # Chroma 向量数据库本地持久化目录
-│   ├── requirements.txt             # Python 依赖清单
-│   └── .env.example                 # 环境变量模板
-│
-├── frontend/                        # 前端工程 (Vue 3 + Vite)
-│   ├── src/
-│   │   ├── api/
-│   │   │   └── trip.js              # Axios 后端 API 请求封装
-│   │   ├── components/
-│   │   │   └── MapView.vue          # 高德 JS API 2.0 地图渲染与轨迹连线组件
-│   │   ├── App.vue                  # 全屏可视化大屏交互主页
-│   │   ├── style.css                # TailwindCSS 全局样式
-│   │   └── main.js                  # Vue 入口
-│   ├── tailwind.config.js           # Tailwind 配置文件
-│   ├── postcss.config.js            # PostCSS 配置文件
-│   ├── vite.config.js               # Vite 基础配置
-│   └── package.json                 # Node.js 依赖清单
-│
-└── README.md
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── main.py
+│   │   ├── agent/
+│   │   │   ├── __init__.py
+│   │   │   ├── planner.py
+│   │   │   └── prompt_templates.py
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   └── trip.py
+│   │   ├── rag/
+│   │   │   ├── __init__.py
+│   │   │   ├── hybrid.py
+│   │   │   └── vector_db.py
+│   │   ├── routes/
+│   │   │   ├── __init__.py
+│   │   │   ├── history.py
+│   │   │   └── trip.py
+│   │   ├── schemas/
+│   │   │   ├── __init__.py
+│   │   │   └── trip.py
+│   │   └── services/
+│   │       ├── __init__.py
+│   │       ├── map_service.py
+│   │       └── weather_service.py
+│   └── data/
+│       └── guides/
+│           ├── hailing_and_gaogang_depth.md
+│           ├── morning_tea_and_culture.md
+│           ├── taixing_and_jingjiang.md
+│           ├── taizhou_food_and_routes.md
+│           ├── wetland_and_ecology.md
+│           └── xinghua_culture_and_shagou.md
+└── frontend/
+├── index.html
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── tailwind.config.js
+├── vite.config.js
+├── public/
+│   ├── favicon.svg
+│   └── icons.svg
+└── src/
+├── App.vue
+├── main.js
+├── style.css
+├── api/
+│   └── trip.js
+├── assets/
+│   ├── hero.png
+│   ├── vite.svg
+│   └── vue.svg
+└── components/
+├── HelloWorld.vue
+└── MapView.vue
 
 
 🚀 快速启动指南
 1. 环境准备
-   Python: 3.11（推荐）或 3.10
+    Python: 3.11（推荐）或 3.10
     Node.js: 18.x 或更高版本
 
-    后端部署与启动
+2. 后端服务部署 (FastAPI)
     进入后端目录并创建虚拟环境：
+   # 1. 进入后端目录
     cd backend
+    
+    # 2. 创建并激活 Python 虚拟环境 (Windows PowerShell)
     python -m venv venv
-    # 激活虚拟环境 (Windows PowerShell)
     .\venv\Scripts\Activate.ps1
     # 或 Windows CMD: .\venv\Scripts\activate.bat
+    # 或 Linux/macOS: source venv/bin/activate
+    
+    # 3. 安装依赖包
+    pip install -r requirements.txt
+    
+    # 4. 配置环境变量
+    copy .env.example .env     # Linux/macOS 使用: cp .env.example .env
 
     安装依赖：
     pip install -r requirements.txt
 
-    配置环境变量：
-    在 backend/ 目录下新建 .env 文件，填入你的密钥信息：
+3. 在 backend/.env 中配置对应的 API 密钥：
 
     PROJECT_NAME="凤城云图 (Fengcheng-Yuntu)"
     # DeepSeek API 配置
@@ -100,5 +130,15 @@ fengcheng-yuntu/
 
     # 数据库配置
     DATABASE_URL="sqlite:///./fengcheng.db"
-    启动后端服务：
+    
+4. 启动后端服务：
     uvicorn app.main:app --reload --port 8000
+5. 前端服务启动 (Vue 3 + Vite)
+   # 1. 进入前端目录
+    cd frontend
+    
+    # 2. 安装前端依赖
+    npm install
+    
+    # 3. 启动开发服务器
+    npm run dev
