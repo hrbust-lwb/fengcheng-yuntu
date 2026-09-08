@@ -2,9 +2,11 @@ import json
 import uuid
 import re
 from datetime import datetime, timedelta
+from typing import List
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage
+from langfuse.decorators import observe, langfuse_context
 from app.config import settings
 from app.schemas.trip import (
     TripGenerateRequest,
@@ -18,21 +20,14 @@ from app.agent.prompt_templates import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMP
 
 
 def repair_and_parse_json(raw_text: str) -> dict:
-    """企业级 JSON 自愈解析器：应对大模型常见的格式幻觉"""
-    # 1. 剥离可能存在的 Markdown 代码块标记
+    """企业级 JSON 自愈解析器"""
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_text)
     content = match.group(1).strip() if match else raw_text.strip()
-
     try:
-        # 尝试标准解析
         return json.loads(content)
     except json.JSONDecodeError:
         pass
-
-    # 2. 正则修补常见缺陷：清除尾部多余的逗号 (如 {"a": 1,} -> {"a": 1})
     content = re.sub(r",\s*([\]}])", r"\1", content)
-
-    # 3. 截断提取：强制提取最外层大括号包裹的内容，丢弃前后的废话说明
     start = content.find("{")
     end = content.rfind("}")
     if start != -1 and end != -1:
@@ -40,19 +35,16 @@ def repair_and_parse_json(raw_text: str) -> dict:
             return json.loads(content[start:end+1])
         except json.JSONDecodeError:
             pass
-
     raise ValueError("无法修复大模型输出的畸形 JSON")
 
 
 class TaizhouPlannerAgent:
-    """泰州专属智能行程规划 Agent (具备自纠错韧性)"""
-
     def __init__(self):
         self.llm = ChatOpenAI(
             model=settings.LLM_MODEL_NAME,
             api_key=settings.DEEPSEEK_API_KEY,
             base_url=settings.DEEPSEEK_BASE_URL,
-            temperature=0.3, # 保持低温度以提高 JSON 结构稳定性
+            temperature=0.3,
             max_tokens=4096
         )
         self.prompt_template = ChatPromptTemplate.from_messages([
@@ -60,8 +52,34 @@ class TaizhouPlannerAgent:
             ("user", PLANNER_USER_PROMPT)
         ])
 
+    @observe(name="Hybrid_RAG_Retrieval")
+    def _retrieve_rag_knowledge(self, query: str) -> List[str]:
+        """子 Span 1：监控 RAG 知识检索输入输出与耗时"""
+        chunks = taizhou_retriever.retrieve(query=query, top_k=3)
+        langfuse_context.update_current_observation(output={"retrieved_chunks": chunks})
+        return chunks
+
+    @observe(name="DeepSeek_Generation")
+    async def _call_llm_generation(self, messages, attempt: int = 1) -> str:
+        """子 Span 2：监控大模型生成的原始输出与 Token 消耗"""
+        response = await self.llm.ainvoke(messages)
+        raw_content = response.content.strip()
+        langfuse_context.update_current_observation(
+            input=messages,
+            output=raw_content,
+            metadata={"attempt": attempt}
+        )
+        return raw_content
+
+    @observe(name="Taizhou_Agent_Planner")
     async def plan_trip(self, req: TripGenerateRequest, max_retries: int = 2) -> TripPlanResponse:
-        # 1. 日期与天数校验
+        """根 Trace：监控整个 Agent 行程规划生命周期"""
+        langfuse_context.update_current_trace(
+            user_id="tourist_demo_user",
+            tags=[f"{req.days}天游", "自愈模式"]
+        )
+
+        # 1. 计算出游天数
         if req.end_date:
             d1 = datetime.strptime(req.start_date, "%Y-%m-%d")
             d2 = datetime.strptime(req.end_date, "%Y-%m-%d")
@@ -69,18 +87,18 @@ class TaizhouPlannerAgent:
         else:
             trip_days = req.days or 3
 
-        # 2. RAG 知识检索与天气感知
+        # 2. 调用带追踪的 RAG 检索
         query_kw = f"泰州 {trip_days}天 {' '.join(req.preferences)} {req.custom_requirements or ''}"
-        rag_chunks = taizhou_retriever.retrieve(query=query_kw, top_k=3)
+        rag_chunks = self._retrieve_rag_knowledge(query=query_kw)
         rag_context_str = "\n\n".join(rag_chunks) if rag_chunks else "暂无特殊本地规则，遵循经典路线安排。"
 
+        # 3. 获取天气
         weather_notices = await weather_service.get_taizhou_weather(
             start_date_str=req.start_date,
             days=trip_days
         )
         weather_summary = "; ".join([f"{w.city}: {w.weather_condition}, {w.temperature}" for w in weather_notices])
 
-        # 3. 组装初始 Prompt Messages
         messages = self.prompt_template.format_messages(
             start_date=req.start_date,
             days=trip_days,
@@ -92,45 +110,40 @@ class TaizhouPlannerAgent:
             weather_context=weather_summary
         )
 
-        # 4. 反射重试与自纠错闭环 (Reflective Retry Loop)
+        # 4. 反思重试生成循环
         plan_dict = None
         for attempt in range(max_retries + 1):
-            response = await self.llm.ainvoke(messages)
-            raw_content = response.content.strip()
+            raw_content = await self._call_llm_generation(messages, attempt=attempt + 1)
 
             try:
                 plan_dict = repair_and_parse_json(raw_content)
-
-                # 强契约断言：确保核心结构存在，防止后续 KeyError
                 if "itinerary" not in plan_dict or not isinstance(plan_dict["itinerary"], list):
                     raise ValueError("JSON 结构缺失核心字段 'itinerary'")
-
-                break # 解析与校验成功，跳出重试循环
+                break
 
             except (ValueError, json.JSONDecodeError) as e:
                 if attempt == max_retries:
+                    langfuse_context.update_current_trace(level="ERROR", status_message=str(e))
                     raise RuntimeError(f"大模型 {max_retries} 次重试后仍未能生成合法 JSON。最终报错: {e}")
 
                 print(f"[PlannerAgent] JSON 解析失败，触发第 {attempt + 1} 次自我纠错重试...")
-                # 将错误信息反馈给 LLM，迫使其反思并修正自己的输出
                 messages.extend([
                     AIMessage(content=raw_content),
                     HumanMessage(content=f"你刚才输出的内容无法被 JSON 解析，报错原因：{str(e)}。请检查是否有未闭合的括号、多余的逗号或非规范的注释，严格重新输出纯 JSON 对象！")
                 ])
 
-        # 5. 高德 POI 坐标富化 + 补全公历日期
+        # 5. POI 坐标富化
         start_dt = datetime.strptime(req.start_date, "%Y-%m-%d")
         itinerary = plan_dict.get("itinerary", [])
 
         for idx, day in enumerate(itinerary):
             day["date_str"] = (start_dt + timedelta(days=idx)).strftime("%Y-%m-%d")
-
             for act in day.get("activities", []):
                 act_title = act.get("title", "")
                 poi_point = await amap_service.search_poi(keywords=act_title)
                 act["location"] = poi_point.model_dump()
 
-        # 6. 组装最终响应协议
+        # 6. 返回结构化响应
         trip_id = f"tz_{uuid.uuid4().hex[:8]}"
         return TripPlanResponse(
             trip_id=trip_id,

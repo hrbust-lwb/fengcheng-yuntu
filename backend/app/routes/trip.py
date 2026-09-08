@@ -85,6 +85,15 @@ async def generate_trip(req: TripGenerateRequest, db: Session = Depends(get_db))
         return plan_response
     except Exception as e:
         db.rollback()
+        # ========== 强制打印错误到终端 ==========
+        import traceback
+        print("\n" + "="*50)
+        print("🚨 发现致命错误，具体原因如下：")
+        print(f"错误类型: {type(e).__name__}")
+        print(f"错误描述: {str(e)}")
+        traceback.print_exc()
+        print("="*50 + "\n")
+        # ========================================
         raise HTTPException(status_code=500, detail=f"行程规划生成失败: {str(e)}")
 
 

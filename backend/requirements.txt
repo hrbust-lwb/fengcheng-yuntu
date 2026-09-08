@@ -14,4 +14,4 @@ redis>=5.0.0
 python-dotenv>=1.0.1
 tenacity>=8.2.3
 redis>=5.0.1
-langfuse>=2.0.0
+langfuse==2.60.10
