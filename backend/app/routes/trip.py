@@ -1,6 +1,8 @@
 import json
+import asyncio
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.trip import TripRecord
@@ -9,16 +11,65 @@ from app.agent.planner import taizhou_planner
 
 router = APIRouter(prefix="/trip", tags=["Trip Planning"])
 
-@router.post("/generate", response_model=TripPlanResponse, summary="生成泰州专属定制行程")
-async def generate_trip(req: TripGenerateRequest, db: Session = Depends(get_db)):
+@router.post("/generate-stream", summary="流式生成泰州定制行程 (企业级 SSE)")
+async def generate_trip_stream(req: TripGenerateRequest, db: Session = Depends(get_db)):
     """
-    触发 DeepSeek + Hybrid RAG + 高德地图富化规划流程，并将结果持久化至数据库
+    采用 Server-Sent Events (SSE) 解决大模型生成长耗时导致的请求阻塞。
+    向前端分阶段推送 Agent 执行状态，最后下发完整结构化数据并安全落库。
     """
-    try:
-        # 1. 运行 Agent 生成完整方案
-        plan_response = await taizhou_planner.plan_trip(req)
+    async def event_generator():
+        try:
+            # 阶段 1：意图识别与前置知识检索
+            yield f"data: {json.dumps({'status': 'THINKING', 'message': '正在拉取泰州最新文旅知识库与气象数据...'})}\n\n"
+            await asyncio.sleep(0.1) # 模拟微小延迟，确保持续渲染
 
-        # 2. 写入 SQLite 数据库持久化
+            # 阶段 2：大模型核心决策与规划
+            yield f"data: {json.dumps({'status': 'PLANNING', 'message': 'DeepSeek 正在执行多日动线规划与物理防折返校验...'})}\n\n"
+
+            # 执行耗时最长的 Agent 逻辑
+            plan_response = await taizhou_planner.plan_trip(req)
+
+            # 阶段 3：地理富化与持久化落库
+            yield f"data: {json.dumps({'status': 'SAVING', 'message': '行程生成完毕，正在同步高德坐标与持久化...'})}\n\n"
+
+            record = TripRecord(
+                trip_id=plan_response.trip_id,
+                title=plan_response.title,
+                destination=plan_response.destination,
+                days=req.days,
+                budget=req.budget,
+                start_date=req.start_date,
+                summary=plan_response.summary,
+                plan_json=plan_response.model_dump_json()
+            )
+            db.add(record)
+            db.commit()
+
+            # 阶段 4：下发完整渲染数据，通知前端闭环
+            yield f"data: {json.dumps({'status': 'COMPLETED', 'data': plan_response.model_dump()})}\n\n"
+
+        except Exception as e:
+            db.rollback()
+            # 捕获 Planner 抛出的重试失败等异常，并转义双引号防止 JSON 损坏
+            error_msg = str(e).replace('"', '\\"')
+            yield f"data: {json.dumps({'status': 'ERROR', 'message': f'生成失败: {error_msg}'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no" # 生产级细节：禁用 Nginx 网关缓冲，确保数据实时流出
+        }
+    )
+
+
+@router.post("/generate", response_model=TripPlanResponse, summary="生成泰州定制行程 (传统阻塞式兜底)")
+async def generate_trip(req: TripGenerateRequest, db: Session = Depends(get_db)):
+    """保留原有阻塞式接口，供简单的纯数据 API 调用方（如 Postman、自动化脚本）使用"""
+    try:
+        plan_response = await taizhou_planner.plan_trip(req)
         record = TripRecord(
             trip_id=plan_response.trip_id,
             title=plan_response.title,
@@ -31,25 +82,19 @@ async def generate_trip(req: TripGenerateRequest, db: Session = Depends(get_db))
         )
         db.add(record)
         db.commit()
-        db.refresh(record)
-
         return plan_response
-
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"行程规划生成失败: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"行程规划生成失败: {str(e)}")
+
 
 @router.get("/{trip_id}", response_model=TripPlanResponse, summary="根据 Trip ID 获取行程详情")
 def get_trip_detail(trip_id: str, db: Session = Depends(get_db)):
     record = db.query(TripRecord).filter(TripRecord.trip_id == trip_id).first()
     if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该行程记录")
+        raise HTTPException(status_code=404, detail="未找到该行程记录")
+    return TripPlanResponse(**json.loads(record.plan_json))
 
-    plan_data = json.loads(record.plan_json)
-    return TripPlanResponse(**plan_data)
 
 @router.get("/history/list", summary="获取历史生成的行程列表")
 def list_trip_history(limit: int = 10, db: Session = Depends(get_db)):
@@ -67,11 +112,12 @@ def list_trip_history(limit: int = 10, db: Session = Depends(get_db)):
         for r in records
     ]
 
+
 @router.delete("/{trip_id}", summary="删除指定历史行程")
 def delete_trip(trip_id: str, db: Session = Depends(get_db)):
     record = db.query(TripRecord).filter(TripRecord.trip_id == trip_id).first()
     if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="行程不存在")
+        raise HTTPException(status_code=404, detail="行程不存在")
     db.delete(record)
     db.commit()
     return {"status": "success", "message": f"行程 {trip_id} 已删除"}
