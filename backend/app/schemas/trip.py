@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from datetime import date
 from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 class LocationPoint(BaseModel):
     """地理坐标点与 POI 详细信息"""
@@ -45,23 +46,55 @@ class WeatherNotice(BaseModel):
     weather_condition: str = Field(..., description="天气状况，如：多云、小雨")
     temperature: str = Field(..., description="气温区间，如：19°C ~ 27°C")
     smart_tips: str = Field(..., description="天气关联的出行建议")
+    source: str = Field(
+        default="seasonal_climate",
+        description="amap_forecast=高德短期预报；seasonal_climate=时令气候参考"
+    )
 
 class TripGenerateRequest(BaseModel):
     """前端发起行程规划请求模型"""
-    destination: str = Field(default="泰州", description="目的地 (固定/默认为泰州及下辖区县)")
+    destination: str = Field(default="泰州", min_length=1, max_length=64, description="目的地 (固定/默认为泰州及下辖区县)")
     start_date: str = Field(..., example="2026-09-10", description="出发日期 (YYYY-MM-DD)")
     end_date: Optional[str] = Field(None, example="2026-09-12", description="返程日期 (YYYY-MM-DD)")
     days: Optional[int] = Field(None, ge=1, le=7, example=3, description="游玩天数")
-    budget: float = Field(..., gt=0, example=2500.0, description="总预算(元)")
-    travelers_count: int = Field(default=2, ge=1, description="出行人数")
+    budget: float = Field(..., gt=0, le=100000, example=2500.0, description="总预算(元)")
+    travelers_count: int = Field(default=2, ge=1, le=50, description="出行人数")
     preferences: List[str] = Field(
         default=["早茶文化", "水乡生态", "园林人文"],
+        min_length=1,
+        max_length=10,
         description="偏好标签"
     )
     custom_requirements: Optional[str] = Field(
         default=None,
+        max_length=500,
         description="特殊需求"
     )
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date_format(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        try:
+            date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("日期必须使用 YYYY-MM-DD 格式") from exc
+        return value
+
+    @model_validator(mode="after")
+    def validate_trip_window(self):
+        start = date.fromisoformat(self.start_date)
+        if self.end_date:
+            end = date.fromisoformat(self.end_date)
+            if end < start:
+                raise ValueError("返程日期不能早于出发日期")
+            span_days = (end - start).days + 1
+            if span_days > 7:
+                raise ValueError("单次行程最多支持 7 天")
+            if self.days is not None and self.days != span_days:
+                raise ValueError("days 必须与 start_date/end_date 区间一致")
+        return self
 
 class TripPlanResponse(BaseModel):
     """完整行程规划响应协议"""

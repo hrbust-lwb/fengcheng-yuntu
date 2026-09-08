@@ -1,5 +1,7 @@
 import json
 import asyncio
+import logging
+from datetime import date
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -9,7 +11,26 @@ from app.models.trip import TripRecord
 from app.schemas.trip import TripGenerateRequest, TripPlanResponse
 from app.agent.planner import taizhou_planner
 
+logger = logging.getLogger("yuntu_trip")
+
 router = APIRouter(prefix="/trip", tags=["Trip Planning"])
+
+
+def _build_trip_record(req: TripGenerateRequest, plan_response: TripPlanResponse) -> TripRecord:
+    trip_days = req.days
+    if trip_days is None and req.end_date:
+        trip_days = (date.fromisoformat(req.end_date) - date.fromisoformat(req.start_date)).days + 1
+    return TripRecord(
+        trip_id=plan_response.trip_id,
+        title=plan_response.title,
+        destination=plan_response.destination,
+        days=trip_days or 3,
+        budget=req.budget,
+        start_date=req.start_date,
+        summary=plan_response.summary,
+        plan_json=plan_response.model_dump_json()
+    )
+
 
 @router.post("/generate-stream", summary="流式生成泰州定制行程 (企业级 SSE)")
 async def generate_trip_stream(req: TripGenerateRequest, db: Session = Depends(get_db)):
@@ -32,27 +53,17 @@ async def generate_trip_stream(req: TripGenerateRequest, db: Session = Depends(g
             # 阶段 3：地理富化与持久化落库
             yield f"data: {json.dumps({'status': 'SAVING', 'message': '行程生成完毕，正在同步高德坐标与持久化...'})}\n\n"
 
-            record = TripRecord(
-                trip_id=plan_response.trip_id,
-                title=plan_response.title,
-                destination=plan_response.destination,
-                days=req.days,
-                budget=req.budget,
-                start_date=req.start_date,
-                summary=plan_response.summary,
-                plan_json=plan_response.model_dump_json()
-            )
+            record = _build_trip_record(req, plan_response)
             db.add(record)
             db.commit()
 
             # 阶段 4：下发完整渲染数据，通知前端闭环
             yield f"data: {json.dumps({'status': 'COMPLETED', 'data': plan_response.model_dump()})}\n\n"
 
-        except Exception as e:
+        except Exception:
             db.rollback()
-            # 捕获 Planner 抛出的重试失败等异常，并转义双引号防止 JSON 损坏
-            error_msg = str(e).replace('"', '\\"')
-            yield f"data: {json.dumps({'status': 'ERROR', 'message': f'生成失败: {error_msg}'})}\n\n"
+            logger.exception("SSE 行程生成失败，出发日期=%s", req.start_date)
+            yield f"data: {json.dumps({'status': 'ERROR', 'message': '生成失败，请稍后重试'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -70,31 +81,14 @@ async def generate_trip(req: TripGenerateRequest, db: Session = Depends(get_db))
     """保留原有阻塞式接口，供简单的纯数据 API 调用方（如 Postman、自动化脚本）使用"""
     try:
         plan_response = await taizhou_planner.plan_trip(req)
-        record = TripRecord(
-            trip_id=plan_response.trip_id,
-            title=plan_response.title,
-            destination=plan_response.destination,
-            days=req.days,
-            budget=req.budget,
-            start_date=req.start_date,
-            summary=plan_response.summary,
-            plan_json=plan_response.model_dump_json()
-        )
+        record = _build_trip_record(req, plan_response)
         db.add(record)
         db.commit()
         return plan_response
-    except Exception as e:
+    except Exception:
         db.rollback()
-        # ========== 强制打印错误到终端 ==========
-        import traceback
-        print("\n" + "="*50)
-        print("🚨 发现致命错误，具体原因如下：")
-        print(f"错误类型: {type(e).__name__}")
-        print(f"错误描述: {str(e)}")
-        traceback.print_exc()
-        print("="*50 + "\n")
-        # ========================================
-        raise HTTPException(status_code=500, detail=f"行程规划生成失败: {str(e)}")
+        logger.exception("阻塞式行程生成失败，出发日期=%s", req.start_date)
+        raise HTTPException(status_code=500, detail="行程规划生成失败，请稍后重试")
 
 
 @router.get("/{trip_id}", response_model=TripPlanResponse, summary="根据 Trip ID 获取行程详情")

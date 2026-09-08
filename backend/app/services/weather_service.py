@@ -91,7 +91,8 @@ class TaizhouWeatherService:
                     city=f"泰州市 ({cur_date_str})",
                     weather_condition=weather_desc,
                     temperature=temp_desc,
-                    smart_tips=tips
+                    smart_tips=tips,
+                    source="amap_forecast" if cur_date_str in live_forecast_map else "seasonal_climate"
                 )
             )
 

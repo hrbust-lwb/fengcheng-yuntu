@@ -5,6 +5,12 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "凤城云图 (Fengcheng-Yuntu)"
     API_V1_STR: str = "/api/v1"
 
+    # 浏览器跨域白名单，生产环境应替换为实际前端域名
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
     # 大语言模型配置 (默认值留空，运行时自动从 .env 读取)
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"

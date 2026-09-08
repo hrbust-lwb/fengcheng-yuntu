@@ -129,14 +129,14 @@
 
           <!-- 天气感知预警 (精确绑定所选日期) -->
           <div v-if="planResult.weather_info?.length" class="bg-gradient-to-r from-teal-50/90 to-amber-50/90 border border-teal-200/80 rounded-2xl p-4 shadow-sm space-y-2.5">
-            <div class="text-xs font-bold text-teal-900 flex items-center justify-between">
-              <div class="flex items-center gap-1.5">
-                <span class="text-base">🌦️</span> 泰州实时天气与出行感知
+              <div class="text-xs font-bold text-teal-900 flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-base">🌦️</span> 泰州天气与出行感知
+                </div>
+                <span class="text-[10px] bg-white/80 border border-teal-300 text-teal-700 px-2 py-0.5 rounded-full">
+                  数据来源自动标注
+                </span>
               </div>
-              <span class="text-[10px] bg-white/80 border border-teal-300 text-teal-700 px-2 py-0.5 rounded-full">
-                与行程日期实时对齐
-              </span>
-            </div>
 
             <div class="space-y-2">
               <div
@@ -151,6 +151,14 @@
                   <span class="font-semibold text-slate-800">{{ w.city.split(' ')[1]?.replace(/[()]/g, '') || w.city }}</span>
                   <span class="text-teal-700 font-medium bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100">
                     {{ w.weather_condition }} · {{ w.temperature }}
+                  </span>
+                  <span
+                      :class="w.source === 'amap_forecast'
+                        ? 'bg-blue-100 text-blue-700 border-blue-200'
+                        : 'bg-amber-100 text-amber-700 border-amber-200'"
+                      class="text-[10px] px-1.5 py-0.5 rounded border font-medium"
+                  >
+                    {{ w.source === 'amap_forecast' ? '高德预报' : '时令参考' }}
                   </span>
                 </div>
                 <div class="text-slate-600 text-[11px] leading-relaxed sm:text-right">

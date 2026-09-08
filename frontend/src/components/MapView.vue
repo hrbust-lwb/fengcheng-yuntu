@@ -42,8 +42,8 @@ let currentMarkers = [];
 let currentPolyline = null;
 let globalInfoWindow = null;
 
-// 高德地图 Web Key
-const AMAP_KEY = '99b3cba53d1df90a9d81d00bbd182481';
+// 高德地图 Web Key，从 frontend/.env 注入，不要把真实 Key 提交进仓库
+const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || '';
 
 // 判断是否为酒店/住宿类型节点
 const isHotelActivity = (act) => {
@@ -51,7 +51,16 @@ const isHotelActivity = (act) => {
   return t.includes('入住') || t.includes('酒店') || t.includes('民宿') || t.includes('宾馆') || t.includes('客栈');
 };
 
+const escapeHtml = (value) => String(value ?? '').replace(
+  /[&<>"']/g,
+  (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]
+);
+
 const initMap = () => {
+  if (!AMAP_KEY) {
+    console.error('缺少 VITE_AMAP_KEY，请在 frontend/.env 中配置高德 JS Key');
+    return;
+  }
   AMapLoader.load({
     key: AMAP_KEY,
     version: '2.0',
@@ -80,7 +89,7 @@ const initMap = () => {
 const buildInfoWindowContent = (act) => {
   const isHotel = isHotelActivity(act);
   const photoHtml = act.location?.photo_url
-      ? `<img src="${act.location.photo_url}" style="width: 100%; height: 95px; object-fit: cover; border-radius: 6px; margin-bottom: 6px;" alt="${act.title}"/>`
+      ? `<img src="${escapeHtml(act.location.photo_url)}" style="width: 100%; height: 95px; object-fit: cover; border-radius: 6px; margin-bottom: 6px;" alt="${escapeHtml(act.title)}"/>`
       : '';
 
   const tagHtml = isHotel
@@ -91,11 +100,11 @@ const buildInfoWindowContent = (act) => {
     <div style="padding: 6px; font-size: 13px; max-width: 250px; line-height: 1.4;">
       ${photoHtml}
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-        <h4 style="margin: 0; font-weight: bold; color: ${isHotel ? '#b45309' : '#0f766e'}; font-size: 14px;">${act.title}</h4>
+        <h4 style="margin: 0; font-weight: bold; color: ${isHotel ? '#b45309' : '#0f766e'}; font-size: 14px;">${escapeHtml(act.title)}</h4>
         ${tagHtml}
       </div>
-      <p style="margin: 0 0 4px 0; color: #64748b; font-size: 11px;">⏰ ${act.time_slot} | 💰 ¥${act.cost || 0}/人</p>
-      <p style="margin: 0; color: #334155; font-size: 12px;">${act.description}</p>
+      <p style="margin: 0 0 4px 0; color: #64748b; font-size: 11px;">⏰ ${escapeHtml(act.time_slot)} | 💰 ¥${escapeHtml(act.cost ?? 0)}/人</p>
+      <p style="margin: 0; color: #334155; font-size: 12px;">${escapeHtml(act.description)}</p>
     </div>
   `;
 };

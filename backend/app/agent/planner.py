@@ -1,6 +1,8 @@
 import json
 import uuid
 import re
+import asyncio
+import logging
 from datetime import datetime, timedelta
 from typing import List
 from langchain_openai import ChatOpenAI
@@ -17,6 +19,8 @@ from app.rag.hybrid import taizhou_retriever
 from app.services.weather_service import weather_service
 from app.services.map_service import amap_service
 from app.agent.prompt_templates import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT
+
+logger = logging.getLogger("yuntu_planner")
 
 
 def repair_and_parse_json(raw_text: str) -> dict:
@@ -126,7 +130,7 @@ class TaizhouPlannerAgent:
                     langfuse_context.update_current_trace(level="ERROR", status_message=str(e))
                     raise RuntimeError(f"大模型 {max_retries} 次重试后仍未能生成合法 JSON。最终报错: {e}")
 
-                print(f"[PlannerAgent] JSON 解析失败，触发第 {attempt + 1} 次自我纠错重试...")
+                logger.warning("JSON 解析失败，触发第 %s 次自我纠错重试", attempt + 1)
                 messages.extend([
                     AIMessage(content=raw_content),
                     HumanMessage(content=f"你刚才输出的内容无法被 JSON 解析，报错原因：{str(e)}。请检查是否有未闭合的括号、多余的逗号或非规范的注释，严格重新输出纯 JSON 对象！")
@@ -138,9 +142,13 @@ class TaizhouPlannerAgent:
 
         for idx, day in enumerate(itinerary):
             day["date_str"] = (start_dt + timedelta(days=idx)).strftime("%Y-%m-%d")
-            for act in day.get("activities", []):
-                act_title = act.get("title", "")
-                poi_point = await amap_service.search_poi(keywords=act_title)
+            acts = day.get("activities", [])
+            if not acts:
+                continue
+            poi_results = await asyncio.gather(
+                *(amap_service.search_poi(keywords=act.get("title", "")) for act in acts)
+            )
+            for act, poi_point in zip(acts, poi_results):
                 act["location"] = poi_point.model_dump()
 
         # 6. 返回结构化响应
