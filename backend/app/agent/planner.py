@@ -24,7 +24,7 @@ logger = logging.getLogger("yuntu_planner")
 
 
 def repair_and_parse_json(raw_text: str) -> dict:
-    """企业级 JSON 自愈解析器"""
+    """ JSON 自愈解析器"""
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", raw_text)
     content = match.group(1).strip() if match else raw_text.strip()
     try:
@@ -63,14 +63,26 @@ class TaizhouPlannerAgent:
         langfuse_context.update_current_observation(output={"retrieved_chunks": chunks})
         return chunks
 
-    @observe(name="DeepSeek_Generation")
+    @observe(name="DeepSeek_Generation", as_type="generation")
     async def _call_llm_generation(self, messages, attempt: int = 1) -> str:
-        """子 Span 2：监控大模型生成的原始输出与 Token 消耗"""
+        """子 Generation：监控大模型生成的原始输出与 Token 消耗"""
         response = await self.llm.ainvoke(messages)
         raw_content = response.content.strip()
+
+        # 1. 兼容提取 LangChain AIMessage 中的 token 统计
+        usage_meta = getattr(response, "usage_metadata", None) or response.response_metadata.get("token_usage", {})
+        input_tokens = usage_meta.get("input_tokens") or usage_meta.get("prompt_tokens", 0)
+        output_tokens = usage_meta.get("output_tokens") or usage_meta.get("completion_tokens", 0)
+
+        # 2. 将 token 指标与模型名称注入观测
         langfuse_context.update_current_observation(
+            model=settings.LLM_MODEL_NAME,
             input=messages,
             output=raw_content,
+            usage={
+                "input": input_tokens,
+                "output": output_tokens,
+            },
             metadata={"attempt": attempt}
         )
         return raw_content
