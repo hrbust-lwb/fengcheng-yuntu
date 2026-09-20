@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from app.config import settings
 from app.database import engine, Base
+from app.routes.history import router as history_router
 from app.routes.trip import router as trip_router
 
 # 核心修改：导入企业级监控中间件
@@ -32,6 +33,7 @@ app.add_middleware(
 )
 
 # 挂载业务路由
+app.include_router(history_router, prefix=settings.API_V1_STR)
 app.include_router(trip_router, prefix=settings.API_V1_STR)
 
 @app.get("/", include_in_schema=False)

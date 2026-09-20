@@ -1,3 +1,9 @@
+"""
+这是一段 **SQLAlchemy ORM（Python 数据库 ORM 框架）** 的模型定义代码
+**旅行规划系统的行程表**：
+用户生成一份旅行方案之后，把行程信息存入 `trip_records`：
+"""
+
 from datetime import datetime
 from sqlalchemy import Column, String, Float, Integer, Text, DateTime
 from app.database import Base

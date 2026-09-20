@@ -25,6 +25,7 @@ yarn-error.log*
 *.sqlite3
 backend/fengcheng.db
 backend/data/chroma_db/
+backend/data/faiss_index/
 
 # IDE 与系统临时文件
 .idea/

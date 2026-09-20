@@ -20,7 +20,10 @@ class ActivityItem(BaseModel):
     duration_minutes: int = Field(default=120, description="建议游玩时长(分钟)")
     cost: float = Field(default=0.0, description="预估单人门票/体验费用(元)")
     description: str = Field(..., description="游玩看点与核心攻略")
+    opening_hours: Optional[str] = Field(None, description="开放时间，例如：08:00 - 17:30")
     transport_tips: Optional[str] = Field(None, description="前往下一站的建议交通方式")
+    transport_distance_km: Optional[float] = Field(None, description="到下一站的驾车距离(公里)")
+    transport_duration_minutes: Optional[int] = Field(None, description="到下一站的驾车耗时(分钟)")
 
 class DayPlan(BaseModel):
     """单日行程计划"""
@@ -96,6 +99,14 @@ class TripGenerateRequest(BaseModel):
                 raise ValueError("days 必须与 start_date/end_date 区间一致")
         return self
 
+    @property
+    def resolved_days(self) -> int:
+        """返回最终行程天数，供路由、仓储和 Agent 共用。"""
+
+        if self.end_date:
+            return (date.fromisoformat(self.end_date) - date.fromisoformat(self.start_date)).days + 1
+        return self.days or 3
+
 class TripPlanResponse(BaseModel):
     """完整行程规划响应协议"""
     trip_id: str = Field(..., description="唯一行程 ID")
@@ -106,3 +117,4 @@ class TripPlanResponse(BaseModel):
     budget_breakdown: BudgetBreakdown = Field(..., description="预算汇总拆解")
     weather_info: Optional[List[WeatherNotice]] = Field(default=None, description="沿途天气信息")
     rag_references: Optional[List[str]] = Field(default=None, description="引用的本地知识库片段")
+    validation_warnings: List[str] = Field(default_factory=list, description="行程约束校验提示")

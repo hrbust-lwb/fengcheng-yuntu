@@ -3,19 +3,29 @@
     <!-- 地图渲染容器 -->
     <div id="amap-container" class="w-full h-full"></div>
 
+    <div class="pointer-events-none absolute left-5 top-5 z-10 flex items-center gap-3 rounded-lg border border-gold/35 bg-ink/90 px-4 py-3 text-white shadow-luxe backdrop-blur-md">
+      <div class="grid h-9 w-9 place-items-center rounded-md border border-gold/40 bg-gold/10 text-gold">
+        <MapPinned :size="18" />
+      </div>
+      <div>
+        <div class="font-display text-base font-semibold tracking-[0.08em] text-champagne">凤城漫游图</div>
+        <div class="mt-0.5 text-[10px] tracking-[0.14em] text-white/45">TAIZHOU JOURNEY MAP</div>
+      </div>
+    </div>
+
     <!-- 地图右上角图例浮层 -->
-    <div class="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-xl shadow-lg border border-slate-200 text-xs flex items-center space-x-3.5 z-10">
+    <div class="absolute right-5 top-5 z-10 flex items-center space-x-3.5 rounded-lg border border-gold/30 bg-white/95 px-4 py-2.5 text-xs shadow-luxe backdrop-blur-sm">
       <div class="flex items-center space-x-1.5">
-        <span class="w-3 h-3 rounded-full bg-teal-600 inline-block shadow-xs"></span>
-        <span class="text-slate-700 font-medium">打卡点</span>
+        <span class="inline-block h-3 w-3 rounded-full bg-emerald shadow-sm"></span>
+        <span class="font-medium text-forest">打卡点</span>
       </div>
       <div class="flex items-center space-x-1.5">
-        <span class="w-3 h-3 rounded-full bg-amber-600 inline-block shadow-xs"></span>
-        <span class="text-slate-700 font-medium">夜宿酒店</span>
+        <span class="inline-block h-3 w-3 rounded-full bg-gold shadow-sm"></span>
+        <span class="font-medium text-forest">夜宿酒店</span>
       </div>
       <div class="flex items-center space-x-1.5">
-        <span class="w-5 h-1 bg-teal-500 rounded-full inline-block"></span>
-        <span class="text-slate-700 font-medium">行进轨迹</span>
+        <span class="inline-block h-1 w-5 rounded-full bg-forest"></span>
+        <span class="font-medium text-forest">行进轨迹</span>
       </div>
     </div>
   </div>
@@ -24,6 +34,7 @@
 <script setup>
 import { onMounted, onUnmounted, watch } from 'vue';
 import AMapLoader from '@amap/amap-jsapi-loader';
+import { MapPinned } from 'lucide-vue-next';
 
 const props = defineProps({
   itinerary: {
@@ -93,18 +104,18 @@ const buildInfoWindowContent = (act) => {
       : '';
 
   const tagHtml = isHotel
-      ? `<span style="background: #fef3c7; color: #92400e; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid #fde68a;">夜宿落点 🛏️</span>`
-      : `<span style="background: #ccfbf1; color: #0f766e; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid #99f6e4;">游玩打卡 📍</span>`;
+      ? `<span style="background: #ead9b5; color: #0f2b24; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid #c6a15b;">夜宿落点</span>`
+      : `<span style="background: #e7f5f1; color: #167665; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid #9fd4c8;">游玩打卡</span>`;
 
   return `
     <div style="padding: 6px; font-size: 13px; max-width: 250px; line-height: 1.4;">
       ${photoHtml}
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-        <h4 style="margin: 0; font-weight: bold; color: ${isHotel ? '#b45309' : '#0f766e'}; font-size: 14px;">${escapeHtml(act.title)}</h4>
+        <h4 style="margin: 0; font-weight: 700; color: ${isHotel ? '#8b6b2f' : '#126b5e'}; font-size: 14px;">${escapeHtml(act.title)}</h4>
         ${tagHtml}
       </div>
-      <p style="margin: 0 0 4px 0; color: #64748b; font-size: 11px;">⏰ ${escapeHtml(act.time_slot)} | 💰 ¥${escapeHtml(act.cost ?? 0)}/人</p>
-      <p style="margin: 0; color: #334155; font-size: 12px;">${escapeHtml(act.description)}</p>
+      <p style="margin: 0 0 4px 0; color: #64716d; font-size: 11px;">时间 ${escapeHtml(act.time_slot)} · ¥${escapeHtml(act.cost ?? 0)}/人</p>
+      <p style="margin: 0; color: #20302c; font-size: 12px;">${escapeHtml(act.description)}</p>
     </div>
   `;
 };
@@ -145,13 +156,13 @@ const renderDayTrajectory = () => {
 
     const isHotel = isHotelActivity(act);
 
-    // 酒店使用橙色 🏨 图标，景点使用青色数字编号
+    // 酒店使用香槟金图标，景点使用翡翠色数字编号
     const markerContent = isHotel ? `
-      <div style="background-color: #d97706; color: white; border-radius: 9999px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); border: 2px solid white; cursor: pointer; transition: transform 0.2s;">
-        🏨
+      <div style="background-color: #c6a15b; color: #081512; border-radius: 9999px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; box-shadow: 0 6px 16px rgba(8,21,18,.35); border: 2px solid #f7f4ec; cursor: pointer; transition: transform .2s;">
+        宿
       </div>
     ` : `
-      <div style="background-color: #0f766e; color: white; border-radius: 9999px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.25); border: 2px solid white; cursor: pointer; transition: transform 0.2s;">
+      <div style="background-color: #167665; color: white; border-radius: 9999px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; box-shadow: 0 5px 14px rgba(8,21,18,.28); border: 2px solid white; cursor: pointer; transition: transform .2s;">
         ${index + 1}
       </div>
     `;
@@ -179,9 +190,9 @@ const renderDayTrajectory = () => {
     currentPolyline = new AMapInstance.Polyline({
       path: linePath,
       isOutline: true,
-      outlineColor: '#ffffff',
+      outlineColor: '#f8f5ed',
       borderWeight: 2,
-      strokeColor: '#0d9488',
+      strokeColor: '#c6a15b',
       strokeOpacity: 0.9,
       strokeWeight: 5,
       strokeStyle: 'solid',

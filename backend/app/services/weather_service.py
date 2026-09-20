@@ -1,8 +1,12 @@
 import httpx
+import logging
 from datetime import datetime, timedelta
 from typing import List
+from langfuse.decorators import observe
 from app.config import settings
 from app.schemas.trip import WeatherNotice
+
+logger = logging.getLogger("yuntu_weather")
 
 class TaizhouWeatherService:
     """泰州时令与出行天气感知服务"""
@@ -35,6 +39,7 @@ class TaizhouWeatherService:
 
         return cond, temp, tips
 
+    @observe(name="Amap_Weather_Tool", as_type="tool")
     async def get_taizhou_weather(self, start_date_str: str, days: int = 3) -> List[WeatherNotice]:
         """根据出行的起止日期，生成每日精准对齐的天气感知列表"""
         start_dt = datetime.strptime(start_date_str, "%Y-%m-%d")
@@ -43,6 +48,8 @@ class TaizhouWeatherService:
         # 尝试拉取高德实时预报
         live_forecast_map = {}
         try:
+            if not self.key:
+                raise RuntimeError("未配置 AMAP_WEB_KEY")
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
                     self.BASE_URL,
@@ -53,6 +60,7 @@ class TaizhouWeatherService:
                         "output": "json"
                     }
                 )
+                resp.raise_for_status()
                 data = resp.json()
                 if data.get("status") == "1" and data.get("forecasts"):
                     casts = data["forecasts"][0].get("casts", [])
@@ -60,7 +68,7 @@ class TaizhouWeatherService:
                         cast_date = cast.get("date") # YYYY-MM-DD
                         live_forecast_map[cast_date] = cast
         except Exception as e:
-            print(f"[WeatherService] AMap 天气接口调用异常，启用时令气候引擎: {e}")
+            logger.warning("高德天气接口不可用，启用时令气候引擎: %s", e)
 
         notices: List[WeatherNotice] = []
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
@@ -9,6 +10,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
     ]
 
     # 大语言模型配置 (默认值留空，运行时自动从 .env 读取)
@@ -26,11 +31,18 @@ class Settings(BaseSettings):
     ENABLE_REDIS_CACHE: bool = False
     DATABASE_URL: str = "sqlite:///./fengcheng.db"
 
-    # ChromaDB 向量库持久化路径
-    CHROMA_PERSIST_DIR: str = "./data/chroma_db"
+    # FAISS 混合检索配置
+    FAISS_INDEX_DIR: str = "./data/faiss_index"
+    EMBEDDING_MODEL_NAME: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    RERANKER_MODEL_NAME: str = "BAAI/bge-reranker-base"
+    ENABLE_RERANKER: bool = True
+
+    # Docker 工具沙箱配置
+    ENABLE_DOCKER_SANDBOX: bool = False
+    TOOL_SANDBOX_IMAGE: str = "fengcheng-tool-sandbox:latest"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parents[1] / ".env",
         env_file_encoding="utf-8",
         extra="ignore"
     )

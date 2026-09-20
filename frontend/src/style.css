@@ -9,4 +9,27 @@ html, body, #app {
   height: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: #081512;
+  color: #10201c;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(198, 161, 91, 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(198, 161, 91, 0.45);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }

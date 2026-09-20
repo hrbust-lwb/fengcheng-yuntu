@@ -1,11 +1,15 @@
 import re
 import json
 import hashlib
+import logging
 import httpx
 from typing import Optional
+from langfuse.decorators import observe
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.config import settings
 from app.schemas.trip import LocationPoint
+
+logger = logging.getLogger("yuntu_amap")
 
 class AmapService:
     """高德地图 Web API 服务 (企业级高可用版：集成缓存、熔断与指数退避重试)"""
@@ -78,6 +82,7 @@ class AmapService:
         resp.raise_for_status()
         return resp.json()
 
+    @observe(name="Amap_POI_Search_Tool", as_type="tool")
     async def search_poi(self, keywords: str, city: str = "泰州市") -> LocationPoint:
         clean_name = self._clean_poi_name(keywords)
 
@@ -145,8 +150,47 @@ class AmapService:
                 return result_point if result_point else fallback_point
 
         except Exception as e:
-            print(f"[AmapService] POI 检索全链路异常 ({keywords}): {e}")
+            logger.warning("POI 检索失败 (%s): %s", keywords, e)
 
         return fallback_point
+
+    @observe(name="Amap_Driving_Route_Tool", as_type="tool")
+    async def calculate_driving_route(
+        self,
+        origin: tuple[float, float] | None,
+        destination: tuple[float, float] | None,
+    ) -> dict | None:
+        """计算两个坐标之间的驾车距离和耗时。"""
+
+        if not self.enabled or origin is None or destination is None:
+            return None
+
+        origin_str = f"{origin[0]},{origin[1]}"
+        destination_str = f"{destination[0]},{destination[1]}"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                data = await self._fetch_api(
+                    client,
+                    "/direction/driving",
+                    {
+                        "key": self.key,
+                        "origin": origin_str,
+                        "destination": destination_str,
+                        "extensions": "base",
+                        "strategy": "0",
+                        "output": "json",
+                    },
+                )
+            path = ((data or {}).get("route") or {}).get("paths") or []
+            if not path:
+                return None
+            first_path = path[0]
+            return {
+                "distance_km": round(float(first_path.get("distance", 0)) / 1000, 2),
+                "duration_minutes": max(1, round(float(first_path.get("duration", 0)) / 60)),
+            }
+        except Exception as exc:
+            logger.warning("路线计算失败: %s", exc)
+            return None
 
 amap_service = AmapService()
